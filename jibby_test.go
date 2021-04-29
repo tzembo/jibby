@@ -74,7 +74,7 @@ var unsupportedTests = map[string]bool{
 	"i_string_utf16LE_no_BOM.json":                 true,
 }
 
-// TestJSONTestSuite_Passing tests the seriot.ch corpus for cases that are
+// TestJSONTestSuite_ImplDefined tests the seriot.ch corpus for cases that are
 // implementation defined.  Variables above define exclusions.
 func TestJSONTestSuite_ImplDefined(t *testing.T) {
 	t.Helper()
@@ -152,7 +152,7 @@ func TestJSONTestSuite_Failing(t *testing.T) {
 	}
 }
 
-// TestJibbyTestSuite_Passing tests a local corpus in the
+// TestJibbyTestSuite_Failing tests a local corpus in the
 // same format as the seriot.ch corpus that must error.
 func TestJibbyTestSuite_Failing(t *testing.T) {
 	t.Parallel()
