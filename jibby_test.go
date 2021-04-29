@@ -403,3 +403,54 @@ func testDepthLimit(t *testing.T, input string) {
 	}
 
 }
+
+// TestJSONTestSuite_Passing_Count tests the seriot.ch corpus and ensures that
+// the jibby.Decoder.Count method returns 1 for each document without error.
+func TestJSONTestSuite_Passing_Count(t *testing.T) {
+	t.Helper()
+	t.Parallel()
+	files := getTestFiles(t, JSONTestSuite, "y", ".json")
+	for _, f := range files {
+		path := filepath.Join(JSONTestSuite, f)
+		t.Run(f, func(t *testing.T) {
+			t.Parallel()
+			testPassingCount(t, path, nil)
+		})
+	}
+}
+
+// TestJibbyTestSuite_Passing tests a local corpus in the
+// same format as the seriot.ch corpus
+func TestJibbyTestSuite_Passing_Count(t *testing.T) {
+	t.Helper()
+	t.Parallel()
+	files := getTestFiles(t, JibbyTestSuite, "y", ".json")
+	for _, f := range files {
+		path := filepath.Join(JibbyTestSuite, f)
+		t.Run(f, func(t *testing.T) {
+			t.Parallel()
+			testPassingCount(t, path, nil)
+		})
+	}
+}
+
+func testPassingCount(t *testing.T, f string, allowedErrStrings []string) {
+	t.Helper()
+	text, err := ioutil.ReadFile(f)
+	if err != nil {
+		t.Fatalf("error reading %s: %v", f, err)
+	}
+	text = objectify(text)
+	count, err := countWithJibby(text)
+	if err != nil {
+		for _, v := range allowedErrStrings {
+			if strings.Contains(err.Error(), v) {
+				return
+			}
+		}
+		t.Fatalf("jibby error: %v\ntext: %s", err, string(text))
+	}
+	if count != 1 {
+		t.Fatalf("jibby should have counted 1 object, but got %d", count)
+	}
+}
