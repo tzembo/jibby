@@ -609,3 +609,83 @@ func (d *Decoder) convertString(out []byte) ([]byte, error) {
 
 	return out, nil
 }
+
+func (d *Decoder) skipObject() error {
+	var ch byte
+	var err error
+	var depth = 1
+
+	for {
+		if depth > d.maxDepth {
+			return errors.New("maximum depth exceeded")
+		}
+
+		ch, err = d.json.ReadByte()
+		if err != nil {
+			return newReadError(err)
+		}
+
+		// Count curly braces that are not found within strings.
+		switch ch {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return nil
+			}
+		case '"':
+			if err := d.skipString(); err != nil {
+				return err
+			}
+		default:
+		}
+	}
+}
+
+func (d *Decoder) skipString() error {
+	var terminated bool
+
+	for !terminated {
+		// peek ahead 64 bytes
+		buf, err := d.json.Peek(64)
+		if err != nil {
+			// here, io.EOF is OK, since we're only peeking and may hit end of
+			// object
+			if err != io.EOF {
+				return err
+			}
+		}
+
+		// If peek yields no bytes, then we know that this string isn't
+		// terminated and need to return an ErrUnexpectedEOF.
+		if len(buf) == 0 {
+			return newReadError(io.ErrUnexpectedEOF)
+		}
+
+		var i int
+	INNER:
+		for i = 0; i < len(buf); i++ {
+			switch buf[i] {
+			case '\\':
+				// Ensure we don't terminate the string too early if we
+				// encounter an escaped quote.
+				i++
+			case '"':
+				terminated = true
+				break INNER
+			default:
+			}
+		}
+
+		// If terminated, closing quote is at index i, so discard i + 1 bytes to include it,
+		// otherwise only discard i bytes to skip the text we've copied.
+		if terminated {
+			_, _ = d.json.Discard(i + 1)
+		} else {
+			_, _ = d.json.Discard(i)
+		}
+	}
+
+	return nil
+}

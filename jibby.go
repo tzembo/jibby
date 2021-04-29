@@ -108,7 +108,7 @@ func (d *Decoder) Decode(buf []byte) ([]byte, error) {
 	if err != nil {
 		// Before an object is read, EOF is a valid response that
 		// shouldn't be wrapped.
-		if err == io.EOF {
+		if err == io.EOF && !d.arrayStarted {
 			return nil, err
 		}
 		return nil, newReadError(err)
@@ -138,22 +138,99 @@ func (d *Decoder) Decode(buf []byte) ([]byte, error) {
 	// the character back to be
 	// After ']', terminate stream?
 	if d.arrayStarted {
-		ch, err := d.readAfterWS()
-		if err != nil {
-			return nil, newReadError(err)
-		}
-
-		switch ch {
-		case ',':
-			// nothing
-		case ']':
-			d.arrayFinished = true
-		default:
-			return nil, d.parseError([]byte{ch}, "expecting value-separator or end of array")
+		if err := d.readAfterArrayObject(); err != nil {
+			return nil, err
 		}
 	}
 
 	return buf, nil
+}
+
+// Count returns the number of objects in the input stream. This does not
+// validate the contents of the JSON objects, but uses curly braces and quotes
+// to efficiently skip over objects.
+func (d *Decoder) Count() (int64, error) {
+	return d.skipNObjects(-1)
+}
+
+// Skip discards the provided number of JSON objects in the input stream. This
+// does not validate the contents of the JSON objects, but uses curly braces and
+// quotes to efficiently skip over objects.
+func (d *Decoder) Skip(n int64) error {
+	_, err := d.skipNObjects(n)
+	return err
+}
+
+// skipNObjects will discard up to n top-level objects in the decoder's stream. It
+// returns the number of objects that were actually discarded as well as an error.
+//
+// If n < 0, then skipNObjects will skip all objects in the stream.
+func (d *Decoder) skipNObjects(n int64) (int64, error) {
+	var skippedObjectCount int64
+
+Loop:
+	for {
+		// Stop when object count reaches n (if applicable).
+		if n >= 0 && skippedObjectCount >= n {
+			break
+		}
+
+		ch, err := d.readAfterWS()
+		if err != nil {
+			// Before an object is read, EOF is a valid response that
+			// shouldn't be wrapped.
+			if err == io.EOF && !d.arrayStarted {
+				break
+			}
+			return 0, newReadError(err)
+		}
+
+		switch ch {
+		case '{':
+			if err := d.skipObject(); err != nil {
+				return 0, err
+			}
+			skippedObjectCount++
+		case ']':
+			if d.arrayStarted {
+				d.arrayFinished = true
+				break
+			}
+			return 0, d.parseError([]byte{ch}, "Decode only supports object decoding")
+		default:
+			return 0, d.parseError([]byte{ch}, "Decode only supports object decoding")
+		}
+
+		// If in comma mode, consume comma or ']'.
+		if d.arrayStarted {
+			if err := d.readAfterArrayObject(); err != nil {
+				return 0, err
+			}
+			if d.arrayFinished {
+				break Loop
+			}
+		}
+	}
+
+	return skippedObjectCount, nil
+}
+
+func (d *Decoder) readAfterArrayObject() error {
+	ch, err := d.readAfterWS()
+	if err != nil {
+		return newReadError(err)
+	}
+
+	switch ch {
+	case ',':
+		// nothing
+	case ']':
+		d.arrayFinished = true
+	default:
+		return d.parseError([]byte{ch}, "expecting value-separator or end of array")
+	}
+
+	return nil
 }
 
 // readAfterWS discards JSON white space and returns the next character.
