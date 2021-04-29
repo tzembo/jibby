@@ -454,3 +454,113 @@ func testPassingCount(t *testing.T, f string, allowedErrStrings []string) {
 		t.Fatalf("jibby should have counted 1 object, but got %d", count)
 	}
 }
+
+func TestCount(t *testing.T) {
+	testCases := []struct {
+		input    string
+		expected int64
+	}{
+		{
+			`{"a":1}`,
+			1,
+		},
+		{
+			`{"a":{"b":1}}`,
+			1,
+		},
+		{
+			`{"a":"this string contains \"quotes\""}`,
+			1,
+		},
+		{
+			`{"a":"this string contains {curly braces}"}`,
+			1,
+		},
+		{
+			`{"a":1}
+            {"a": 2}`,
+			2,
+		},
+		{
+			`[{"a":1}]`,
+			1,
+		},
+		{
+			`[{"a":1}
+            {"a":2}]`,
+			2,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.input, func(t *testing.T) {
+			jib, err := NewDecoder(bufio.NewReader(bytes.NewReader([]byte(tc.input))))
+			if err != nil {
+				t.Fatalf("expected no error and got: %v", err)
+			}
+			n, err := jib.Count()
+			if err != nil {
+				t.Fatalf("expected no error and got: %v", err)
+			}
+			if tc.expected != n {
+				t.Fatalf("expected count to be %d and got %d", tc.expected, n)
+			}
+		})
+	}
+}
+
+func TestSkip(t *testing.T) {
+	testCases := []struct {
+		label string
+		input string
+		n     int64
+		err   error
+	}{
+		{
+			"1 object, skip 0",
+			`{"a":1}`,
+			0,
+			nil,
+		},
+		{
+			"1 object, skip 1",
+			`{"a":1}`,
+			1,
+			io.EOF,
+		},
+		{
+			"1 object, skip 2",
+			`{"a":1}`,
+			2,
+			io.EOF,
+		},
+		{
+			"2 objects, skip 1",
+			`{"a":1}
+            {"a":2}`,
+			1,
+			nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.label, func(t *testing.T) {
+			jib, err := NewDecoder(bufio.NewReader(bytes.NewReader([]byte(tc.input))))
+			if err != nil {
+				t.Fatalf("expected no error and got: %v", err)
+			}
+			// Skip specified number of objects in stream.
+			if err := jib.Skip(tc.n); err != nil {
+				t.Fatalf("expected no error and got: %v", err)
+			}
+			// Check that next call to Decode yields expected result.
+			_, err = jib.Decode(make([]byte, 0, 256))
+			if err != tc.err {
+				if tc.err == nil {
+					t.Fatalf("expected no error and got: %v", err)
+				}
+				t.Fatalf("expected error but got none")
+			}
+		})
+	}
+}
